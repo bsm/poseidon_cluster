@@ -14,7 +14,7 @@ require 'poseidon_cluster'
 consumer = Poseidon::ConsumerGroup.new(
             "my-group",                               # Group name
             ["kafka1.host:9092", "kafka2.host:9092"], # Kafka brokers
-            ["kafka1.host:2181", "kafka2.host:2181"], # Zookeeper brokers
+            ["kafka1.host:2181", "kafka2.host:2181"], # Zookeepers hosts
             "my-topic")                               # Topic name
 
 consumer.partitions # => [0, 1, 2, 3] - all partitions of 'my-topic'
@@ -46,7 +46,9 @@ For more details and information, please see the [Poseidon::ConsumerGroup](http:
 
 The test suite will automatically download, configure and run Kafka locally, you only need a JRE. Run the suite via:
 
-    # bundle exec rake spec
+```bash
+bundle exec rake spec
+```
 
 ## Licence
 
