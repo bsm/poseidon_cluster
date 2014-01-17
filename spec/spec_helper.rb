@@ -20,6 +20,7 @@ end
 
 RSpec.configure do |c|
   c.include Poseidon::SpecHelper
+  c.filter_run_excluding slow: true
 
   c.before :suite do
     kafka_bin = KAFKA_ROOT.join("bin", "kafka-server-start.sh")
@@ -56,10 +57,13 @@ RSpec.configure do |c|
     messages = ("aa".."zz").map do |key|
       Poseidon::MessageToSend.new(TOPIC_NAME, [key, payload].join(":"), key)
     end
-    20.times do
-      break if producer.send_messages(messages)
+
+    ok = false
+    100.times do
+      break if (ok = producer.send_messages(messages))
       sleep(0.1)
     end
+    raise "Unable to start Kafka instance." unless ok
   end
 
   c.after :suite do

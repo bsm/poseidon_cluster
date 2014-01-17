@@ -77,4 +77,8 @@ describe Poseidon::ConsumerGroup, integration: true do
 
   end
 
+  describe "multi-process fuzzing", slow: true do
+
+  end
+
 end
