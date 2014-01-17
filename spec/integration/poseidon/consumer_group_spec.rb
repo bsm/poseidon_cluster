@@ -11,35 +11,24 @@ describe Poseidon::ConsumerGroup, integration: true do
 
   let(:consumed) { Hash.new(0) }
 
-  def total
-    consumed.values.inject(0, :+)
-  end
-
   def stored_offsets
     { 0 => subject.offset(0), 1 => subject.offset(1) }
   end
 
   describe "small batches" do
-    before { sleep 1 }
 
     it "should consume messages from all partitions" do
-      subject.fetch {|n, msgs| consumed[n] += msgs.size }
-      consumed.should == { 0 => 115 }
-      subject.fetch {|n, msgs| consumed[n] += msgs.size }
-      consumed.should == { 0 => 115, 1 => 115 }
-      subject.fetch {|n, msgs| consumed[n] += msgs.size }
-      consumed.should == { 0 => 230, 1 => 115 }
-      subject.fetch {|n, msgs| consumed[n] += msgs.size }
-      consumed.should == { 0 => 230, 1 => 230 }
-      subject.fetch {|n, msgs| consumed[n] += msgs.size }
-      consumed.should == { 0 => 336, 1 => 230 }
-      subject.fetch {|n, msgs| consumed[n] += msgs.size }
-      consumed.should == { 0 => 336, 1 => 340 }
-      subject.fetch {|n, msgs| consumed[n] += msgs.size }
-      consumed.should == { 0 => 336, 1 => 340 }
-      stored_offsets.should == { 0 => 336, 1 => 340 }
+      5.times do
+        subject.fetch {|n, msgs| consumed[n] += msgs.size }
+      end
+      consumed.values.inject(0, :+).should < 676
 
-      total.should == 676
+      5.times do
+        subject.fetch {|n, msgs| consumed[n] += msgs.size }
+      end
+      consumed.keys.should =~ [0, 1]
+      consumed.values.inject(0, :+).should == 676
+      consumed.should == stored_offsets
     end
 
   end
@@ -48,15 +37,12 @@ describe Poseidon::ConsumerGroup, integration: true do
     subject { new_group 1024 * 1024 * 10 }
 
     it "should consume messages from all partitions" do
-      subject.fetch {|n, msgs| consumed[n] += msgs.size }
-      consumed.should == { 0 => 336 }
-      subject.fetch {|n, msgs| consumed[n] += msgs.size }
-      consumed.should == { 0 => 336, 1 => 340 }
-      subject.fetch {|n, msgs| consumed[n] += msgs.size }
-      consumed.should == { 0 => 336, 1 => 340 }
-      stored_offsets.should == { 0 => 336, 1 => 340 }
-
-      total.should == 676
+      5.times do
+        subject.fetch {|n, msgs| consumed[n] += msgs.size }
+      end
+      consumed.keys.should =~ [0, 1]
+      consumed.values.inject(0, :+).should == 676
+      consumed.should == stored_offsets
     end
   end
 

@@ -2,3 +2,4 @@ logs/
 kafka*/
 doc/
 .yardoc/
+.bundle/
