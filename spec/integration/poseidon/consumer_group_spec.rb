@@ -67,11 +67,11 @@ describe Poseidon::ConsumerGroup, integration: true do
 
     it "should consume from multiple sources" do
       a = thread(subject, 100)
-      b = thread(second, 3)
-      c = thread(third, 6)
+      b = thread(second, 10)
+      c = thread(third, 20)
       d = thread(fourth, 100)
 
-      vals = [a,b,c,d].map(&:value)
+      vals = [a,b,c,d,e].map(&:value)
       vals.inject(0, :+).should == 676
     end
 
