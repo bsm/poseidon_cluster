@@ -2,8 +2,8 @@ require 'spec_helper'
 
 describe Poseidon::ConsumerGroup, integration: true do
 
-  def new_group(max_bytes = 1024*8)
-    described_class.new "my-group", ["localhost:29092"], ["localhost:22181"], TOPIC_NAME, max_bytes: max_bytes
+  def new_group(max_bytes = 1024*8, name = TOPIC_NAME)
+    described_class.new "my-group", ["localhost:29092"], ["localhost:22181"], name, max_bytes: max_bytes
   end
 
   subject { new_group }
@@ -78,7 +78,70 @@ describe Poseidon::ConsumerGroup, integration: true do
   end
 
   describe "multi-process fuzzing", slow: true do
+    before do
+      producer = Poseidon::Producer.new(["localhost:29092"], "my-producer")
+      payload  = "data" * 10
+      100.times do
+        messages = (0...1000).map do |i|
+          Poseidon::MessageToSend.new("slow-topic", payload, i.to_s)
+        end
+        producer.send_messages(messages)
+      end
+    end
+
+    it 'should consume correctly' do
+      read, write = IO.pipe
+      pid1 = fork do
+        group = new_group(64*1024, "slow-topic")
+        10.times do
+          5.times { group.fetch {|_, m| write.write "1:#{m.size}\n" }}
+          sleep(1)
+        end
+      end
+      pid2 = fork do
+        group = new_group(32*1024, "slow-topic")
+        5.times do
+          10.times { group.fetch {|_, m| write.write "2:#{m.size}\n" }}
+          sleep(1)
+        end
+      end
+      pid3 = fork do
+        group = new_group(8*1024, "slow-topic")
+        5.times do
+          50.times { group.fetch {|_, m| write.write "3:#{m.size}\n" }}
+        end
+      end
+      Process.wait(pid2)
+
+      pid4 = fork do
+        group = new_group(8*1024, "slow-topic")
+        5.times do
+          50.times { group.fetch {|_, m| write.write "4:#{m.size}\n" }}
+        end
+      end
+      pid5 = fork do
+        group = new_group(32*1024, "slow-topic")
+        5.times do
+          50.times { group.fetch {|_, m| write.write "5:#{m.size}\n" }}
+          sleep(2)
+        end
+      end
+      Process.wait(pid1)
+      Process.wait(pid3)
+      Process.wait(pid4)
+      Process.wait(pid5)
+      write.close
+      raw = read.read
+      read.close
+
+      stats = raw.lines.inject(Hash.new(0)) do |res, line|
+        pid, count = line.chomp.split(":")
+        res[pid.to_i] += count.to_i
+        res
+      end
+      stats.keys.size.should be_within(1).of(4)
+      stats.values.inject(0, :+).should == 100_000
+    end
 
   end
-
 end
