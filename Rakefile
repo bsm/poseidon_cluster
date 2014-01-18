@@ -7,4 +7,10 @@ require 'yard'
 require 'yard/rake/yardoc_task'
 YARD::Rake::YardocTask.new
 
+require 'coveralls/rake/task'
+Coveralls::RakeTask.new
+namespace :spec do
+  task coveralls: [:spec, 'coveralls:push']
+end
+
 task default: :spec

@@ -139,11 +139,12 @@ describe Poseidon::ConsumerGroup, integration: true do
           50.times { group.fetch {|_, m| write.write "4:#{m.size}\n" }}
         end
       end
+
       pid5 = fork do
         group = new_group(32*1024, "slow-topic")
-        8.times do
+        10.times do
           50.times { group.fetch {|_, m| write.write "5:#{m.size}\n" }}
-          sleep(2)
+          sleep(3)
         end
       end
       Process.wait(pid1)
