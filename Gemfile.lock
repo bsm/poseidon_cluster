@@ -7,7 +7,7 @@ GIT
 PATH
   remote: .
   specs:
-    poseidon_cluster (0.0.2)
+    poseidon_cluster (0.0.3)
       poseidon
       zk
 
@@ -28,6 +28,9 @@ GEM
       diff-lcs (>= 1.1.3, < 2.0)
     rspec-mocks (2.14.4)
     snappy (0.0.10)
+    snappy (0.0.10-java)
+      snappy-jars (~> 1.1.0)
+    snappy-jars (1.1.0.1.2-java)
     yard (0.8.7.3)
     zk (1.9.3)
       logging (~> 1.7.2)
@@ -35,6 +38,7 @@ GEM
     zookeeper (1.4.8)
 
 PLATFORMS
+  java
   ruby
 
 DEPENDENCIES

@@ -48,22 +48,8 @@ RSpec.configure do |c|
     end
 
     # Start Zookeeper & Kafka
-    $ZOOKP_PID = spawn zookp_bin.to_s, zookp_cfg.to_s, out: '/dev/null' # , err: '/dev/null'
-    $KAFKA_PID = spawn kafka_bin.to_s, kafka_cfg.to_s, out: '/dev/null' #, err: '/dev/null'
-
-    # Produce some fixtures
-    producer = Poseidon::Producer.new(["localhost:29092"], "my-producer")
-    payload  = "data" * 10
-    messages = ("aa".."zz").map do |key|
-      Poseidon::MessageToSend.new(TOPIC_NAME, [key, payload].join(":"), key)
-    end
-
-    ok = false
-    100.times do
-      break if (ok = producer.send_messages(messages))
-      sleep(0.1)
-    end
-    raise "Unable to start Kafka instance." unless ok
+    $ZOOKP_PID = spawn zookp_bin.to_s, zookp_cfg.to_s, out: '/dev/null'
+    $KAFKA_PID = spawn kafka_bin.to_s, kafka_cfg.to_s, out: '/dev/null'
   end
 
   c.after :suite do

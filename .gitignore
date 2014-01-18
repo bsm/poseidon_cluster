@@ -3,3 +3,4 @@ kafka*/
 doc/
 .yardoc/
 .bundle/
+pkg/

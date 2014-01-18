@@ -22,6 +22,7 @@
 # @api public
 class Poseidon::ConsumerGroup
   DEFAULT_CLAIM_TIMEOUT = 10
+  DEFAULT_LOOP_DELAY = 1
 
   # Poseidon::ConsumerGroup::Consumer is internally used by Poseidon::ConsumerGroup.
   # Don't invoke it directly.
@@ -62,7 +63,12 @@ class Poseidon::ConsumerGroup
   # @param [Array<String>] brokers A list of known brokers, e.g. ["localhost:9092"]
   # @param [Array<String>] zookeepers A list of known zookeepers, e.g. ["localhost:2181"]
   # @param [String] topic Topic to operate on
-  # @param [Hash] options Partition consumer options, see Poseidon::PartitionConsumer#initialize
+  # @param [Hash] options Consumer options
+  # @option options [Integer] :max_bytes Maximum number of bytes to fetch. Default: 1048576 (1MB)
+  # @option options [Integer] :max_wait_ms How long to block until the server sends us data. Default: 100 (100ms)
+  # @option options [Integer] :min_bytes Smallest amount of data the server should send us. Default: 0 (Send us data as soon as it is ready)
+  # @option options [Integer] :claim_timeout Maximum number of seconds to wait for a partition claim. Default: 10
+  # @option options [Integer] :loop_delay Number of seconds to delay the next fetch (in #fetch_loop) if nothing was returned. Default: 1
   #
   # @api public
   def initialize(name, brokers, zookeepers, topic, options = {})
@@ -150,6 +156,8 @@ class Poseidon::ConsumerGroup
   # Sorted partitions by broker address (so partitions on the same broker are clustered together)
   # @return [Array<Poseidon::Protocol::PartitionMetadata>] sorted partitions
   def partitions
+    return [] unless topic_metadata
+
     topic_metadata.partitions.sort_by do |part|
       broker = metadata.brokers[part.leader]
       [broker.host, broker.port].join(":")
@@ -170,12 +178,20 @@ class Poseidon::ConsumerGroup
   #
   # @param [Hash] opts
   # @option opts [Boolean] :commit Automatically commit consumer offset (default: true)
+  # @return [Boolean] true if a consumer was checked out, false if none could be claimed
+  #
+  # @example
+  #
+  #   ok = group.checkout do |consumer|
+  #     puts "Checked out consumer for partition #{consumer.partition}"
+  #   end
+  #   ok # => true if the block was run, false otherwise
   #
   # @api public
   def checkout(opts = {})
     @mutex.synchronize do
       consumer = @consumers.shift
-      break unless consumer
+      break false unless consumer
 
       @consumers.push(consumer)
       result = yield(consumer)
@@ -183,8 +199,8 @@ class Poseidon::ConsumerGroup
       unless opts[:commit] == false || result == false
         commit consumer.partition, consumer.offset
       end
+      true
     end
-    nil
   end
 
   # Convenience method to fetch messages from the broker.
@@ -193,15 +209,110 @@ class Poseidon::ConsumerGroup
   # @yield [partition, messages] The processing block
   # @yieldparam [Integer] partition The source partition
   # @yieldparam [Array<Message>] messages The fetched messages
-  # @yieldreturn [Boolean] return false to stop commit
+  # @yieldreturn [Boolean] return false to prevent auto-commit
   #
   # @param [Hash] opts
   # @option opts [Boolean] :commit Automatically commit consumed offset (default: true)
+  # @return [Boolean] true if messages were fetched, false if none could be claimed
+  #
+  # @example
+  #
+  #   ok = group.fetch do |n, messages|
+  #     puts "Fetched #{messages.size} messages for partition #{n}"
+  #   end
+  #   ok # => true if the block was run, false otherwise
   #
   # @api public
   def fetch(opts = {})
     checkout(opts) do |consumer|
       yield consumer.partition, consumer.fetch
+    end
+  end
+
+  # Initializes an infinite fetch loop. This method blocks!
+  #
+  # Will wait for `loop_delay` seconds after each failed fetch. This may happen when there is
+  # no new data or when the consumer hasn't claimed any partitions.
+  #
+  # SPECIAL ATTENTION:
+  # When 'breaking out' of the loop, you must do it before processing the messages, as the
+  # the last offset will not be committed. Please see examples below.
+  #
+  # @yield [partition, messages] The processing block
+  # @yieldparam [Integer] partition The source partition, may be -1 if no partitions are claimed
+  # @yieldparam [Array<Message>] messages The fetched messages
+  # @yieldreturn [Boolean] return false to prevent auto-commit
+  #
+  # @param [Hash] opts
+  # @option opts [Boolean] :commit Automatically commit consumed offset (default: true)
+  # @option opts [Boolean] :loop_delay Delay override in seconds after unsuccessful fetch.
+  #
+  # @example
+  #
+  #   group.fetch_loop do |n, messages|
+  #     puts "Fetched #{messages.size} messages for partition #{n}"
+  #   end
+  #   puts "Done" # => this code is never reached
+  #
+  # @example Stopping the loop (wrong)
+  #
+  #   counts = Hash.new(0)
+  #   group.fetch_loop do |n, messages|
+  #     counts[n] += messages.size
+  #     puts "Status: #{counts.inspect}"
+  #     break if counts[0] > 100
+  #   end
+  #   puts "Result: #{counts.inspect}"
+  #   puts "Offset: #{group.offset(0)}"
+  #
+  #   # Output:
+  #   # Status: {0=>30}
+  #   # Status: {0=>60}
+  #   # Status: {0=>90}
+  #   # Status: {0=>120}
+  #   # Result: {0=>120}
+  #   # Offset: 90      # => Last offset was not committed!
+  #
+  # @example Stopping the loop (correct)
+  #
+  #   counts = Hash.new(0)
+  #   group.fetch_loop do |n, messages|
+  #     break if counts[0] > 100
+  #     counts[n] += messages.size
+  #     puts "Status: #{counts.inspect}"
+  #   end
+  #   puts "Result: #{counts.inspect}"
+  #   puts "Offset: #{group.offset(0)}"
+  #
+  #   # Output:
+  #   # Status: {0=>30}
+  #   # Status: {0=>60}
+  #   # Status: {0=>90}
+  #   # Status: {0=>120}
+  #   # Result: {0=>120}
+  #   # Offset: 120
+  #
+  # @api public
+  def fetch_loop(opts = {})
+    delay = opts[:loop_delay] || options[:loop_delay] || DEFAULT_LOOP_DELAY
+
+    loop do
+      mp = false
+      ok = fetch(opts) do |n, messages|
+        mp = !messages.empty?
+        yield n, messages
+      end
+
+      # Yield over an empty array if nothing claimed,
+      # to allow user to e.g. break out of the loop
+      unless ok
+        yield -1, []
+      end
+
+      # Sleep if either not claimes or nothing returned
+      unless ok && mp
+        sleep delay
+      end
     end
   end
 
@@ -218,18 +329,19 @@ class Poseidon::ConsumerGroup
     def rebalance!
       @mutex.synchronize do
         reload
-        cg  = zk.children(registries[:consumer], watch: true).sort
-        pt  = partitions
-        pos = cg.index(id)
-        n   = pt.size / cg.size
-        n   = 1 if n < 1
-
-        first = pos*n
-        last  = (pos+1)*n-1
-
         release_all!
-        (pt[first..last] || []).each do |part|
-          consumer = claim!(part.id)
+
+        cmg = zk.children(registries[:consumer], watch: true).sort
+        ptm = partitions
+        pos = cmg.index(id)
+        break unless ptm.size > pos
+
+        num = ptm.size / cmg.size
+        num = 1 if num < 1
+        rng = pos*num..(pos+1)*num-1
+
+        (ptm[rng] || []).each do |pm|
+          consumer = claim!(pm.id)
           @consumers.push(consumer)
         end
       end

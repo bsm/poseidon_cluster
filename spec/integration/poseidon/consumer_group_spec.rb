@@ -6,14 +6,31 @@ describe Poseidon::ConsumerGroup, integration: true do
     described_class.new "my-group", ["localhost:29092"], ["localhost:22181"], name, max_bytes: max_bytes
   end
 
-  subject { new_group }
-  after   { zookeeper.rm_rf "/consumers/#{subject.name}" }
+  def stored_offsets
+    { 0 => subject.offset(0), 1 => subject.offset(1) }
+  end
 
+  subject { new_group }
   let(:consumed)  { Hash.new(0) }
   let(:zookeeper) { ::ZK.new("localhost:22181") }
 
-  def stored_offsets
-    { 0 => subject.offset(0), 1 => subject.offset(1) }
+  before :all do
+    producer = Poseidon::Producer.new(["localhost:29092"], "my-producer")
+    payload  = "data" * 10
+    messages = ("aa".."zz").map do |key|
+      Poseidon::MessageToSend.new(TOPIC_NAME, [key, payload].join(":"), key)
+    end
+
+    ok = false
+    100.times do
+      break if (ok = producer.send_messages(messages))
+      sleep(0.1)
+    end
+    pending "Unable to start Kafka instance." unless ok
+  end
+
+  after do
+    zookeeper.rm_rf "/consumers/my-group"
   end
 
   describe "small batches" do
@@ -47,14 +64,16 @@ describe Poseidon::ConsumerGroup, integration: true do
     end
   end
 
-  describe "fuzzing" do
+  describe "multi-thread fuzzing", slow: true do
 
     def in_thread(batch_size, target, qu)
       Thread.new do
-        group = new_group(batch_size)
         sum   = 0
-        while sum < target && qu.size < 676
-          group.fetch {|_, m| sum += m.size; m.size.times { qu << true } }
+        group = new_group(batch_size)
+        group.fetch_loop do |n, m|
+          break if sum > target || qu.size >= 676
+          sum += m.size
+          m.size.times { qu << true }
         end
         group.close
         sum
@@ -64,12 +83,16 @@ describe Poseidon::ConsumerGroup, integration: true do
     it "should consume from multiple sources" do
       q = Queue.new
       a = in_thread(4001, 200, q)
-      b = in_thread(4002,  50, q)
+      b = in_thread(4002,  40, q)
       c = in_thread(4003, 120, q)
-      d = in_thread(4004,  40, q)
+      d = in_thread(4004,  50, q)
       e = in_thread(4005, 400, q)
-      vals = [a, b, c, d, e].map &:value
+      vals = [a, b, c, d, e].map(&:value)
       vals.inject(0, :+).should == 676
+
+      o1, _ = zookeeper.get "/consumers/my-group/offsets/#{TOPIC_NAME}/0"
+      o2, _ = zookeeper.get "/consumers/my-group/offsets/#{TOPIC_NAME}/1"
+      (o1.to_i + o2.to_i).should == 676
     end
 
   end

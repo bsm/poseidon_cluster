@@ -1,6 +1,6 @@
 # Poseidon Cluster [![Build Status](https://travis-ci.org/bsm/poseidon_cluster.png?branch=master)](https://travis-ci.org/bsm/poseidon_cluster)
 
-Poseidon Cluster is a cluster extenstion the excellent [Poseidon](http://github.com/bpot/poseidon) Ruby client for Kafka 0.8+. It implements the distribution concept of self-rebalancing *Consumer Groups* and supports the consumption of a single topic from multiple instances.
+Poseidon Cluster is a cluster extension the excellent [Poseidon](http://github.com/bpot/poseidon) Ruby client for Kafka 0.8+. It implements the distribution concept of self-rebalancing *Consumer Groups* and supports the consumption of a single topic from multiple instances.
 
 Consumer group instances share a common group name, and each message published to a topic is delivered to one instance within each subscribing consumer group. Consumer instances can be in separate processes or on separate machines.
 
@@ -38,9 +38,16 @@ consumer.fetch commit: false do |partition, bulk|
 
   consumer.commit partition, bulk.last.offset+1 unless bulk.empty?
 end
+
+# Or, just fetch indefinitely
+consumer.fetch_loop do |partition, bulk|
+  bulk.each do |m|
+    puts "Fetched '#{m.value}' at #{m.offset} from #{partition}"
+  end
+end
 ```
 
-For more details and information, please see the [Poseidon::ConsumerGroup](http://rubydoc.info/github/bsm/poseidon_cluster/Poseidon/ConsumerGroup) documentation.
+For more details and information, please see the [Poseidon::ConsumerGroup](http://rubydoc.info/github/bsm/poseidon_cluster/Poseidon/ConsumerGroup) documentation and the [Examples](https://github.com/bsm/poseidon_cluster/tree/master/examples).
 
 ## Running Tests
 

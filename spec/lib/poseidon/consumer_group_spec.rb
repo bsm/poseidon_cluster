@@ -40,6 +40,7 @@ describe Poseidon::ConsumerGroup do
 
   subject { new_group }
   before do
+    Poseidon::ConsumerGroup.any_instance.stub(:sleep)
     Poseidon::BrokerPool.any_instance.stub(:fetch_metadata_from_broker).and_return(metadata)
     Poseidon::Connection.any_instance.stub(:fetch).with{|_, _, req| req[0].partition_fetches[0].partition == 0 }.and_return(fetch_response(10))
     Poseidon::Connection.any_instance.stub(:fetch).with{|_, _, req| req[0].partition_fetches[0].partition == 1 }.and_return(fetch_response(5))
@@ -82,6 +83,14 @@ describe Poseidon::ConsumerGroup do
     subject.partitions.map(&:id).should == [1, 0]
   end
 
+  it "should not fail if topic doesn't exist" do
+    no_topics = Poseidon::Protocol::MetadataResponse.new nil, brokers.dup, []
+    Poseidon::BrokerPool.any_instance.stub(:fetch_metadata_from_broker).and_return(no_topics)
+
+    subject.partitions.should == []
+    subject.claimed.should == []
+  end
+
   it "should return the offset for each partition" do
     subject.offset(0).should == 0
     subject.offset(1).should == 0
@@ -99,8 +108,8 @@ describe Poseidon::ConsumerGroup do
   end
 
   it "should checkout individual partition consumers (atomically)" do
-    subject.checkout {|c| c.partition.should == 1 }
-    subject.checkout {|c| c.partition.should == 0 }
+    subject.checkout {|c| c.partition.should == 1 }.should be_true
+    subject.checkout {|c| c.partition.should == 0 }.should be_true
 
     n = 0
     a = Thread.new do
@@ -135,10 +144,6 @@ describe Poseidon::ConsumerGroup do
       b.claimed.should == [0]
 
       c = new_group
-      subject.claimed.should == [1]
-      b.claimed.should == [0]
-      c.claimed.should == []
-
       b.close
       wait_for { b.claimed.size < 0 }
       wait_for { c.claimed.size > 0 }
@@ -156,15 +161,17 @@ describe Poseidon::ConsumerGroup do
       subject.fetch do |n, msg|
         n.should == 1
         msg.size.should == 5
-      end
+      end.should be_true
+
       subject.fetch do |n, msg|
         n.should == 0
         msg.size.should == 10
-      end
+      end.should be_true
+
       subject.fetch do |n, msg|
         n.should == 1
         msg.size.should == 5
-      end
+      end.should be_true
     end
 
     it "should auto-commit fetched offset" do
@@ -185,6 +192,56 @@ describe Poseidon::ConsumerGroup do
       }.should_not change { subject.offset(1) }
     end
 
+    it "should return false when trying to fetch messages without a claim" do
+      no_topics = Poseidon::Protocol::MetadataResponse.new nil, brokers.dup, []
+      Poseidon::BrokerPool.any_instance.stub fetch_metadata_from_broker: no_topics
+
+      subject.claimed.should == []
+      subject.fetch {|*|  }.should be_false
+    end
+
+    it "should return true even when no messages were fetched" do
+      Poseidon::Connection.any_instance.stub fetch: fetch_response(0)
+      subject.fetch {|*|  }.should be_true
+    end
+
   end
 
+  describe "fetch_loop" do
+
+    it "should fetch indefinitely" do
+      total, cycles = 0, 0
+      subject.fetch_loop do |_, m|
+        total += m.size
+        break if (cycles+=1) > 2
+      end
+      total.should == 20
+      cycles.should == 3
+    end
+
+    it "should delay fetch was unsuccessful" do
+      subject.stub fetch: false
+
+      cycles = 0
+      subject.should_receive(:sleep).with(1)
+      subject.fetch_loop do |n, m|
+        n.should == -1
+        m.should == []
+        break if (cycles+=1) > 1
+      end
+    end
+
+    it "should delay fetch didn't yield any results" do
+      subject.stub(:fetch).and_yield(3, []).and_return(true)
+
+      cycles = 0
+      subject.should_receive(:sleep).with(1)
+      subject.fetch_loop do |n, m|
+        n.should == 3
+        m.should == []
+        break if (cycles+=1) > 1
+      end
+    end
+
+  end
 end
