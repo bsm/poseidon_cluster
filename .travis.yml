@@ -6,4 +6,4 @@ rvm:
   - jruby-19mode
 env:
   - SLOW=1
-script: rake spec:coveralls
+script: bundle exec rake spec:coveralls
