@@ -7,9 +7,10 @@ describe Poseidon::ConsumerGroup, integration: true do
   end
 
   subject { new_group }
-  after   { subject.zk.rm_rf "/consumers/#{subject.name}" }
+  after   { zookeeper.rm_rf "/consumers/#{subject.name}" }
 
-  let(:consumed) { Hash.new(0) }
+  let(:consumed)  { Hash.new(0) }
+  let(:zookeeper) { ::ZK.new("localhost:22181") }
 
   def stored_offsets
     { 0 => subject.offset(0), 1 => subject.offset(1) }
@@ -47,31 +48,27 @@ describe Poseidon::ConsumerGroup, integration: true do
   end
 
   describe "fuzzing" do
-    subject       { new_group 512 }
-    let!(:second) { new_group 512 }
-    let!(:third)  { new_group 512 }
-    let!(:fourth) { new_group 512 }
 
-    def thread(group, count)
+    def in_thread(batch_size, target, qu)
       Thread.new do
-        sum = 0
-        count.times do |i|
-          group.fetch {|_, msgs| sum += msgs.size }
-          sleep(rand / 100)
-          Thread.pass
+        group = new_group(batch_size)
+        sum   = 0
+        while sum < target && qu.size < 676
+          group.fetch {|_, m| sum += m.size; m.size.times { qu << true } }
         end
-        group.close unless count > 99
+        group.close
         sum
       end
     end
 
     it "should consume from multiple sources" do
-      a = thread(subject, 100)
-      b = thread(second, 10)
-      c = thread(third, 20)
-      d = thread(fourth, 100)
-
-      vals = [a,b,c,d,e].map(&:value)
+      q = Queue.new
+      a = in_thread(4001, 200, q)
+      b = in_thread(4002,  50, q)
+      c = in_thread(4003, 120, q)
+      d = in_thread(4004,  40, q)
+      e = in_thread(4005, 400, q)
+      vals = [a, b, c, d, e].map &:value
       vals.inject(0, :+).should == 676
     end
 
@@ -121,7 +118,7 @@ describe Poseidon::ConsumerGroup, integration: true do
       end
       pid5 = fork do
         group = new_group(32*1024, "slow-topic")
-        5.times do
+        8.times do
           50.times { group.fetch {|_, m| write.write "5:#{m.size}\n" }}
           sleep(2)
         end
