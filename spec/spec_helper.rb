@@ -2,6 +2,8 @@ require 'poseidon_cluster'
 require 'rspec'
 require 'fileutils'
 require 'pathname'
+require 'coveralls'
+Coveralls.wear!
 
 TOPIC_NAME  = "my-topic"
 KAFKA_LOCAL = File.expand_path("../kafka_2.8.0-0.8.0", __FILE__)

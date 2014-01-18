@@ -1,7 +1,4 @@
 language: ruby
-before_install:
- - sudo apt-get update -qq
- - sudo apt-get install -qq liblog4j1.2-java
 rvm:
   - 2.1.0
   - 2.0.0

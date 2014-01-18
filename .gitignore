@@ -4,3 +4,4 @@ doc/
 .yardoc/
 .bundle/
 pkg/
+coverage/
