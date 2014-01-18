@@ -6,7 +6,7 @@ Consumer group instances share a common group name, and each message published t
 
 ## Usage
 
-### Consuming messages
+Launch a consumer group:
 
 ```ruby
 require 'poseidon_cluster'
@@ -18,19 +18,28 @@ consumer = Poseidon::ConsumerGroup.new(
             "my-topic")                               # Topic name
 
 consumer.partitions # => [0, 1, 2, 3] - all partitions of 'my-topic'
-consumer.claimed    # => [0, 1] - partitions this instance is consuming
+consumer.claimed    # => [0, 1] - partitions this instance has claimed
+```
 
-# Fetch a bulk of messages, auto-commit the offset
+Fetch a bulk of messages, auto-commit the offset:
+
+```ruby
 consumer.fetch do |partition, bulk|
   bulk.each do |m|
     puts "Fetched '#{m.value}' at #{m.offset} from #{partition}"
   end
 end
+```
 
-# Get the offset for a partition
+Get the offset for a partition:
+
+```ruby
 consumer.offset(0) # => 320 - current offset from partition 0
+```
 
-# Fetch more, commit manually
+Fetch more messages, commit manually:
+
+```ruby
 consumer.fetch commit: false do |partition, bulk|
   bulk.each do |m|
     puts "Fetched '#{m.value}' at #{m.offset} from #{partition}"
@@ -38,8 +47,11 @@ consumer.fetch commit: false do |partition, bulk|
 
   consumer.commit partition, bulk.last.offset+1 unless bulk.empty?
 end
+```
 
-# Or, just fetch indefinitely
+Initiate a fetch-loop, consume indefinitely:
+
+```ruby
 consumer.fetch_loop do |partition, bulk|
   bulk.each do |m|
     puts "Fetched '#{m.value}' at #{m.offset} from #{partition}"
