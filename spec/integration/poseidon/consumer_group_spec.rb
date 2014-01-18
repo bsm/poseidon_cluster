@@ -97,7 +97,7 @@ describe Poseidon::ConsumerGroup, integration: true do
 
   end
 
-  describe "multi-process fuzzing", slow: true do
+  describe "multi-process fuzzing", slow: true, java: false do
     before do
       producer = Poseidon::Producer.new(["localhost:29092"], "my-producer")
       payload  = "data" * 10
