@@ -23,7 +23,7 @@ end
 RSpec.configure do |c|
   c.include Poseidon::SpecHelper
   c.filter_run_excluding slow: true unless ENV["SLOW"] == "1"
-  c.filter_run_excluding java: false if RUBY_PLATFORM == "JAVA"
+  c.filter_run_excluding java: false if RUBY_PLATFORM == "java"
 
   c.before :suite do
     kafka_bin = KAFKA_ROOT.join("bin", "kafka-server-start.sh")
