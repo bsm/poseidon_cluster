@@ -69,26 +69,20 @@ class Poseidon::ConsumerGroup
   # @option options [Integer] :min_bytes Smallest amount of data the server should send us. Default: 0 (Send us data as soon as it is ready)
   # @option options [Integer] :claim_timeout Maximum number of seconds to wait for a partition claim. Default: 10
   # @option options [Integer] :loop_delay Number of seconds to delay the next fetch (in #fetch_loop) if nothing was returned. Default: 1
+  # @option options [Boolean] :register Automatically register instance and start consuming. Default: true
   #
   # @api public
   def initialize(name, brokers, zookeepers, topic, options = {})
-    @name      = name
-    @topic     = topic
-    @zk        = ::ZK.new(zookeepers.join(","))
-    @options   = options
-    @consumers = []
-    @pool      = ::Poseidon::BrokerPool.new(id, brokers)
-    @mutex     = Mutex.new
+    @name       = name
+    @topic      = topic
+    @zk         = ::ZK.new(zookeepers.join(","))
+    @options    = options
+    @consumers  = []
+    @pool       = ::Poseidon::BrokerPool.new(id, brokers)
+    @mutex      = Mutex.new
+    @registered = false
 
-    # Register instance
-    registries.each do |_, path|
-      zk.mkdir_p(path)
-    end
-    zk.create(consumer_path, "{}", ephemeral: true)
-    zk.register(registries[:consumer]) {|_| rebalance! }
-
-    # Rebalance
-    rebalance!
+    register! unless options[:register] == false
   end
 
   # @return [String] a globally unique identifier
@@ -113,6 +107,27 @@ class Poseidon::ConsumerGroup
   # @return [Poseidon::TopicMetadata] topic metadata
   def topic_metadata
     @topic_metadata ||= metadata.metadata_for_topics([topic])[topic]
+  end
+
+  # @return [Boolean] true if registered
+  def registered?
+    @registered
+  end
+
+  # @return [Boolean] true if registration was successful, false if already registered
+  def register!
+    return false if registered?
+
+    # Register instance
+    registries.each do |_, path|
+      zk.mkdir_p(path)
+    end
+    zk.create(consumer_path, "{}", ephemeral: true)
+    zk.register(registries[:consumer]) {|_| rebalance! }
+
+    # Rebalance
+    rebalance!
+    @registered = true
   end
 
   # Reloads metadata/broker/partition information

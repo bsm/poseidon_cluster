@@ -50,6 +50,7 @@ describe Poseidon::ConsumerGroup do
     groups.each(&:close)
   end
 
+  it               { should be_registered }
   its(:name)       { should == "my-group" }
   its(:topic)      { should == TOPIC_NAME }
   its(:pool)       { should be_instance_of(Poseidon::BrokerPool) }
