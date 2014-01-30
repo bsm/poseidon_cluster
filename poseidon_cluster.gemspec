@@ -5,7 +5,7 @@ Gem::Specification.new do |s|
   s.name        = File.basename(__FILE__, '.gemspec')
   s.summary     = "Poseidon cluster extensions"
   s.description = "Cluster extensions for Poseidon, a producer and consumer implementation for Kafka >= 0.8"
-  s.version     = "0.0.3"
+  s.version     = "0.0.5"
 
   s.authors     = ["Black Square Media"]
   s.email       = "info@blacksquaremedia.com"
