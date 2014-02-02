@@ -42,6 +42,24 @@ class Poseidon::ConsumerGroup
 
   end
 
+  # @param [Integer] pnum number of partitions size
+  # @param [Array<String>] cids consumer IDs
+  # @param [String] id consumer ID
+  # @return [Range, NilClass] selectable range, if any
+  def self.pick(pnum, cids, id)
+    cids = cids.sort
+    pos  = cids.index(id)
+    return unless pos && pos < cids.size
+
+    step = pnum.fdiv(cids.size).ceil
+    frst = pos*step
+    last = (pos+1)*step-1
+    last = pnum-1 if last > pnum-1
+    return if last < 0 || last < frst
+
+    (frst..last)
+  end
+
   # @attr_reader [String] name Group name
   attr_reader :name
 
@@ -346,19 +364,14 @@ class Poseidon::ConsumerGroup
         reload
         release_all!
 
-        cmg = zk.children(registries[:consumer], watch: true).sort
-        ptm = partitions
-        pos = cmg.index(id)
-        break unless ptm.size > pos
+        ids = zk.children(registries[:consumer], watch: true)
+        pms = partitions
+        rng = self.class.pick(pms.size, ids, id)
 
-        num = ptm.size / cmg.size
-        num = 1 if num < 1
-        rng = pos*num..(pos+1)*num-1
-
-        (ptm[rng] || []).each do |pm|
+        pms[rng].each do |pm|
           consumer = claim!(pm.id)
           @consumers.push(consumer)
-        end
+        end if rng
       end
     end
 

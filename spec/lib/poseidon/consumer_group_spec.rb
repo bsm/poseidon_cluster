@@ -154,6 +154,25 @@ describe Poseidon::ConsumerGroup do
       c.claimed.should == [0]
     end
 
+    it "should allocate partitions correctly" do
+      subject.claimed.should == [0, 1]
+
+      b = new_group
+      wait_for { subject.claimed.size > 0 }
+      wait_for { b.claimed.size > 0 }
+      subject.claimed.should == [1]
+      b.claimed.should == [0]
+
+      c = new_group
+      b.close
+      wait_for { b.claimed.size < 0 }
+      wait_for { c.claimed.size > 0 }
+
+      subject.claimed.should == [1]
+      b.claimed.should == []
+      c.claimed.should == [0]
+    end
+
   end
 
   describe "fetch" do
@@ -241,6 +260,31 @@ describe Poseidon::ConsumerGroup do
         n.should == 3
         m.should == []
         break if (cycles+=1) > 1
+      end
+    end
+
+  end
+
+  describe "pick" do
+
+    { [3, ["N1", "N2", "N3"], "N1"]       => (0..0),
+      [3, ["N1", "N2", "N3"], "N2"]       => (1..1),
+      [3, ["N1", "N2", "N3"], "N3"]       => (2..2),
+      [4, ["N2", "N4", "N3", "N1"], "N3"] => (2..2),
+      [3, ["N1", "N2", "N3"], "N4"]       => nil,
+      [5, ["N1", "N2", "N3"], "N1"]       => (0..1),
+      [5, ["N1", "N2", "N3"], "N2"]       => (2..3),
+      [5, ["N1", "N2", "N3"], "N3"]       => (4..4),
+      [5, ["N1", "N2", "N3"], "N4"]       => nil,
+      [2, ["N1", "N2"], "N9"]             => nil,
+      [1, ["N1", "N2", "N3"], "N1"]       => (0..0),
+      [1, ["N1", "N2", "N3"], "N2"]       => nil,
+      [1, ["N1", "N2", "N3"], "N3"]       => nil,
+      [5, ["N1", "N2"], "N1"]             => (0..2),
+      [5, ["N1", "N2"], "N2"]             => (3..4),
+    }.each do |args, expected|
+      it "should pick #{expected.inspect} from #{args.inspect}" do
+        described_class.pick(*args).should == expected
       end
     end
 
