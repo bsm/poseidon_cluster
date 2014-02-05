@@ -21,7 +21,7 @@
 #
 # @api public
 class Poseidon::ConsumerGroup
-  DEFAULT_CLAIM_TIMEOUT = 10
+  DEFAULT_CLAIM_TIMEOUT = 30
   DEFAULT_LOOP_DELAY = 1
 
   # Poseidon::ConsumerGroup::Consumer is internally used by Poseidon::ConsumerGroup.
@@ -30,7 +30,7 @@ class Poseidon::ConsumerGroup
   # @api private
   class Consumer < ::Poseidon::PartitionConsumer
 
-    # @attr_reader [Integer] partition Consumer partition
+    # @attr_reader [Integer] partition consumer partition
     attr_reader :partition
 
     # @api private
@@ -97,7 +97,6 @@ class Poseidon::ConsumerGroup
     @options    = options
     @consumers  = []
     @pool       = ::Poseidon::BrokerPool.new(id, brokers)
-    @mutex      = Mutex.new
     @registered = false
 
     register! unless options[:register] == false
@@ -158,10 +157,8 @@ class Poseidon::ConsumerGroup
   # Closes the consumer group gracefully, only really useful in tests
   # @api private
   def close
-    @mutex.synchronize do
-      release_all!
-      zk.close
-    end
+    release_all!
+    zk.close
   end
 
   # @param [Integer] partition
@@ -222,18 +219,18 @@ class Poseidon::ConsumerGroup
   #
   # @api public
   def checkout(opts = {})
-    @mutex.synchronize do
-      consumer = @consumers.shift
-      break false unless consumer
+    return false if @rebalancing
 
-      @consumers.push(consumer)
-      result = yield(consumer)
+    consumer = @consumers.shift
+    return false unless consumer
 
-      unless opts[:commit] == false || result == false
-        commit consumer.partition, consumer.offset
-      end
-      true
+    @consumers.push(consumer)
+    result = yield(consumer)
+
+    unless opts[:commit] == false || result == false
+      commit consumer.partition, consumer.offset
     end
+    true
   end
 
   # Convenience method to fetch messages from the broker.
@@ -360,19 +357,23 @@ class Poseidon::ConsumerGroup
     # * let POS be our index position in CG and let N = size(PT)/size(CG)
     # * assign partitions from POS*N to (POS+1)*N-1
     def rebalance!
-      @mutex.synchronize do
-        reload
-        release_all!
+      return false if @rebalancing
 
-        ids = zk.children(registries[:consumer], watch: true)
-        pms = partitions
-        rng = self.class.pick(pms.size, ids, id)
+      @rebalancing = true
+      reload
+      release_all!
 
-        pms[rng].each do |pm|
-          consumer = claim!(pm.id)
-          @consumers.push(consumer)
-        end if rng
-      end
+      ids = zk.children(registries[:consumer], watch: true)
+      pms = partitions
+      rng = self.class.pick(pms.size, ids, id)
+
+      pms[rng].each do |pm|
+        consumer = claim!(pm.id)
+        @consumers.push(consumer)
+      end if rng
+      true
+    ensure
+      @rebalancing = nil
     end
 
     # Release all consumer claims
@@ -385,10 +386,11 @@ class Poseidon::ConsumerGroup
     # @raise [Timeout::Error]
     def claim!(partition)
       path = claim_path(partition)
-      Timeout.timeout(options[:claim_timout] || DEFAULT_CLAIM_TIMEOUT) do
-        sleep(0.01) while zk.create(path, id, ephemeral: true, ignore: :node_exists).nil?
+      Timeout.timeout options[:claim_timout] || DEFAULT_CLAIM_TIMEOUT do
+        node = zk.create path, id, ephemeral: true, ignore: :node_exists
+        sleep(0.1) while node.nil?
       end
-      Consumer.new(self, partition, options.dup)
+      Consumer.new self, partition, options.dup
     end
 
     # Release ownership of the partition
