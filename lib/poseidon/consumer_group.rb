@@ -158,10 +158,8 @@ class Poseidon::ConsumerGroup
   # Closes the consumer group gracefully, only really useful in tests
   # @api private
   def close
-    @mutex.synchronize do
-      release_all!
-      zk.close
-    end
+    release_all!
+    zk.close
   end
 
   # @param [Integer] partition
@@ -222,18 +220,24 @@ class Poseidon::ConsumerGroup
   #
   # @api public
   def checkout(opts = {})
+    return false if @rebalancing
+    @processing = true
+
+    consumer = nil
     @mutex.synchronize do
       consumer = @consumers.shift
-      break false unless consumer
-
-      @consumers.push(consumer)
-      result = yield(consumer)
-
-      unless opts[:commit] == false || result == false
-        commit consumer.partition, consumer.offset
-      end
-      true
+      @consumers.push(consumer) if consumer
     end
+
+    return false unless consumer
+    result = yield(consumer)
+
+    unless opts[:commit] == false || result == false
+      commit consumer.partition, consumer.offset
+    end
+    true
+  ensure
+    @processing = false
   end
 
   # Convenience method to fetch messages from the broker.
@@ -360,25 +364,32 @@ class Poseidon::ConsumerGroup
     # * let POS be our index position in CG and let N = size(PT)/size(CG)
     # * assign partitions from POS*N to (POS+1)*N-1
     def rebalance!
-      @mutex.synchronize do
-        reload
-        release_all!
+      @rebalancing = true
 
-        ids = zk.children(registries[:consumer], watch: true)
-        pms = partitions
-        rng = self.class.pick(pms.size, ids, id)
+      reload
+      release_all!
 
-        pms[rng].each do |pm|
-          consumer = claim!(pm.id)
+      ids = zk.children(registries[:consumer], watch: true)
+      pms = partitions
+      rng = self.class.pick(pms.size, ids, id)
+
+      pms[rng].each do |pm|
+        consumer = claim!(pm.id)
+        @mutex.synchronize do
           @consumers.push(consumer)
-        end if rng
-      end
+        end
+      end if rng
+
+    ensure
+      @rebalancing = nil
     end
 
     # Release all consumer claims
     def release_all!
-      @consumers.each {|c| release!(c.partition) }
-      @consumers.clear
+      @mutex.synchronize do
+        @consumers.each {|c| release!(c.partition) }
+        @consumers.clear
+      end
     end
 
     # Claim the ownership of the partition for this consumer
