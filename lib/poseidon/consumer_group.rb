@@ -21,7 +21,7 @@
 #
 # @api public
 class Poseidon::ConsumerGroup
-  DEFAULT_CLAIM_TIMEOUT = 10
+  DEFAULT_CLAIM_TIMEOUT = 20
   DEFAULT_LOOP_DELAY = 1
 
   # Poseidon::ConsumerGroup::Consumer is internally used by Poseidon::ConsumerGroup.
@@ -364,6 +364,9 @@ class Poseidon::ConsumerGroup
     # * let POS be our index position in CG and let N = size(PT)/size(CG)
     # * assign partitions from POS*N to (POS+1)*N-1
     def rebalance!
+      Timeout.timeout(60) do
+        sleep(0.1) while @processing
+      end
       @rebalancing = true
 
       reload
@@ -397,7 +400,7 @@ class Poseidon::ConsumerGroup
     def claim!(partition)
       path = claim_path(partition)
       Timeout.timeout(options[:claim_timout] || DEFAULT_CLAIM_TIMEOUT) do
-        sleep(0.01) while zk.create(path, id, ephemeral: true, ignore: :node_exists).nil?
+        sleep(0.1) while zk.create(path, id, ephemeral: true, ignore: :node_exists).nil?
       end
       Consumer.new(self, partition, options.dup)
     end
