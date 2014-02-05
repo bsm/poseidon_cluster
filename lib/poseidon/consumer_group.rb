@@ -21,7 +21,7 @@
 #
 # @api public
 class Poseidon::ConsumerGroup
-  DEFAULT_CLAIM_TIMEOUT = 30
+  DEFAULT_CLAIM_TIMEOUT = 10
   DEFAULT_LOOP_DELAY = 1
 
   # Poseidon::ConsumerGroup::Consumer is internally used by Poseidon::ConsumerGroup.
@@ -97,6 +97,7 @@ class Poseidon::ConsumerGroup
     @options    = options
     @consumers  = []
     @pool       = ::Poseidon::BrokerPool.new(id, brokers)
+    @mutex      = Mutex.new
     @registered = false
 
     register! unless options[:register] == false
@@ -357,23 +358,7 @@ class Poseidon::ConsumerGroup
     # * let POS be our index position in CG and let N = size(PT)/size(CG)
     # * assign partitions from POS*N to (POS+1)*N-1
     def rebalance!
-      return false if @rebalancing
-
-      @rebalancing = true
-      reload
-      release_all!
-
-      ids = zk.children(registries[:consumer], watch: true)
-      pms = partitions
-      rng = self.class.pick(pms.size, ids, id)
-
-      pms[rng].each do |pm|
-        consumer = claim!(pm.id)
-        @consumers.push(consumer)
-      end if rng
-      true
-    ensure
-      @rebalancing = nil
+      @mutex.synchronize { perform_rebalance! }
     end
 
     # Release all consumer claims
@@ -387,8 +372,7 @@ class Poseidon::ConsumerGroup
     def claim!(partition)
       path = claim_path(partition)
       Timeout.timeout options[:claim_timout] || DEFAULT_CLAIM_TIMEOUT do
-        node = zk.create path, id, ephemeral: true, ignore: :node_exists
-        sleep(0.1) while node.nil?
+        sleep(0.1) while zk.create(path, id, ephemeral: true, ignore: :node_exists).nil?
       end
       Consumer.new self, partition, options.dup
     end
@@ -413,6 +397,23 @@ class Poseidon::ConsumerGroup
     # @return [String] zookeeper consumer registration path
     def consumer_path
       "#{registries[:consumer]}/#{id}"
+    end
+
+    def perform_rebalance!
+      @rebalancing = true
+      reload
+      release_all!
+
+      ids = zk.children(registries[:consumer], watch: true)
+      pms = partitions
+      rng = self.class.pick(pms.size, ids, id)
+
+      pms[rng].each do |pm|
+        consumer = claim!(pm.id)
+        @consumers.push(consumer)
+      end if rng
+    ensure
+      @rebalancing = nil
     end
 
 end
