@@ -21,7 +21,7 @@
 #
 # @api public
 class Poseidon::ConsumerGroup
-  DEFAULT_CLAIM_TIMEOUT = 10
+  DEFAULT_CLAIM_TIMEOUT = 30
   DEFAULT_LOOP_DELAY = 1
 
   # Poseidon::ConsumerGroup::Consumer is internally used by Poseidon::ConsumerGroup.
