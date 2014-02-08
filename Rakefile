@@ -13,4 +13,9 @@ namespace :spec do
   task coveralls: [:spec, 'coveralls:push']
 end
 
+desc "Run full integration test scenario"
+task :scenario do
+  load File.expand_path("../scenario/run.rb", __FILE__)
+end
+
 task default: :spec

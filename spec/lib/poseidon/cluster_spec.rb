@@ -12,4 +12,8 @@ describe Poseidon::Cluster do
     (described_class.inc! - num).should == 502
   end
 
+  it 'should generate GUIDs' do
+    described_class.guid.should match(/\A[\w\-\.]+?\-\d{1,5}\-\d{10}\-\d{1,3}\z/)
+  end
+
 end

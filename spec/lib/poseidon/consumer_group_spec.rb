@@ -2,22 +2,12 @@ require 'spec_helper'
 
 describe Poseidon::ConsumerGroup do
 
-  def new_group
-    group = described_class.new "my-group", ["localhost:29092", "localhost:29091"], ["localhost:22181"], TOPIC_NAME
-    groups.push(group)
-    group
-  end
-
   def fetch_response(n)
     set = Poseidon::MessageSet.new
     n.times {|i| set << Poseidon::Message.new(value: "value", key: "key", offset: i) }
     pfr = Poseidon::Protocol::PartitionFetchResponse.new(0, 0, 100, set)
-    tfr = Poseidon::Protocol::TopicFetchResponse.new(TOPIC_NAME, [pfr])
+    tfr = Poseidon::Protocol::TopicFetchResponse.new("mytopic", [pfr])
     Poseidon::Protocol::FetchResponse.new(nil, [tfr])
-  end
-
-  let :groups do
-    []
   end
 
   let :brokers do
@@ -31,53 +21,59 @@ describe Poseidon::ConsumerGroup do
   end
 
   let :topics do
-    [ Poseidon::TopicMetadata.new(Poseidon::Protocol::TopicMetadataStruct.new(0, TOPIC_NAME, partitions)) ]
+    [ Poseidon::TopicMetadata.new(Poseidon::Protocol::TopicMetadataStruct.new(0, "mytopic", partitions)) ]
   end
 
   let :metadata do
     Poseidon::Protocol::MetadataResponse.new nil, brokers.dup, topics.dup
   end
 
-  subject { new_group }
+  let :zk_client do
+    double "ZK", mkdir_p: nil, get: nil, set: nil, delete: nil, create: "/path", register: nil, children: ["my-group-UNIQUEID"], close: nil
+  end
+
+  subject do
+    described_class.new "my-group", ["localhost:29092", "localhost:29091"], ["localhost:22181"], "mytopic"
+  end
+
   before do
+    ZK.stub new: zk_client
+    Poseidon::Cluster.stub guid: "UNIQUEID"
     Poseidon::ConsumerGroup.any_instance.stub(:sleep)
-    Poseidon::BrokerPool.any_instance.stub(:fetch_metadata_from_broker).and_return(metadata)
+    Poseidon::PartitionConsumer.any_instance.stub resolve_offset_if_necessary: 0
+    Poseidon::BrokerPool.any_instance.stub fetch_metadata_from_broker: metadata
     Poseidon::Connection.any_instance.stub(:fetch).with{|_, _, req| req[0].partition_fetches[0].partition == 0 }.and_return(fetch_response(10))
     Poseidon::Connection.any_instance.stub(:fetch).with{|_, _, req| req[0].partition_fetches[0].partition == 1 }.and_return(fetch_response(5))
-  end
-  after do
-    subject.zk.rm_rf "/consumers/#{subject.name}"
-    groups.each(&:close)
   end
 
   it               { should be_registered }
   its(:name)       { should == "my-group" }
-  its(:topic)      { should == TOPIC_NAME }
+  its(:topic)      { should == "mytopic" }
   its(:pool)       { should be_instance_of(Poseidon::BrokerPool) }
-  its(:id)         { should match(/\Amy-group\-[\w\-\.]+?\-\d{1,5}\-\d{10}\-\d{1,3}\z/) }
-  its(:zk)         { should be_instance_of(ZK::Client::Threaded) }
+  its(:id)         { should == "my-group-UNIQUEID" }
+  its(:zk)         { should be(zk_client) }
 
   its(:claimed)        { should == [0, 1] }
   its(:metadata)       { should be_instance_of(Poseidon::ClusterMetadata) }
   its(:topic_metadata) { should be_instance_of(Poseidon::TopicMetadata) }
   its(:registries)     { should == {
     consumer: "/consumers/my-group/ids",
-    owner:    "/consumers/my-group/owners/my-topic",
-    offset:   "/consumers/my-group/offsets/my-topic",
+    owner:    "/consumers/my-group/owners/mytopic",
+    offset:   "/consumers/my-group/offsets/mytopic",
   }}
 
   its("metadata.brokers.keys") { should =~ [1,2] }
   its("topic_metadata.partition_count") { should == 2 }
 
-  it "should register with zookeeper" do
-    subject.zk.children("/consumers/my-group/ids").should include(subject.id)
-    stat = subject.zk.stat("/consumers/my-group/ids")
-    stat.ephemeral_owner.should be(0)
+  it "should register with zookeeper and rebalance" do
+    zk_client.should_receive(:mkdir_p).with("/consumers/my-group/ids")
+    zk_client.should_receive(:mkdir_p).with("/consumers/my-group/owners/mytopic")
+    zk_client.should_receive(:mkdir_p).with("/consumers/my-group/offsets/mytopic")
+    zk_client.should_receive(:create).with("/consumers/my-group/ids/my-group-UNIQUEID", "{}", ephemeral: true)
+    zk_client.should_receive(:register).with("/consumers/my-group/ids")
+    described_class.any_instance.should_receive :rebalance!
 
-    data, stat = subject.zk.get("/consumers/my-group/ids/#{subject.id}")
-    data.should == "{}"
-    stat.num_children.should == 0
-    stat.ephemeral_owner.should > 0
+    subject
   end
 
   it "should sort partitions by leader address" do
@@ -93,12 +89,13 @@ describe Poseidon::ConsumerGroup do
   end
 
   it "should return the offset for each partition" do
+    zk_client.should_receive(:get).with("/consumers/my-group/offsets/mytopic/0", ignore: :no_node).and_return([nil])
     subject.offset(0).should == 0
-    subject.offset(1).should == 0
-    subject.offset(2).should == 0
-    subject.fetch {|*| true }
-    subject.offset(0).should == 0
-    subject.offset(1).should == 5
+
+    zk_client.should_receive(:get).with("/consumers/my-group/offsets/mytopic/1", ignore: :no_node).and_return(["21", nil])
+    subject.offset(1).should == 21
+
+    zk_client.should_receive(:get).with("/consumers/my-group/offsets/mytopic/2", ignore: :no_node).and_return(["0", nil])
     subject.offset(2).should == 0
   end
 
@@ -130,54 +127,34 @@ describe Poseidon::ConsumerGroup do
   describe "rebalance" do
 
     it "should watch out for new consumers joining/leaving" do
-      subject.should_receive(:rebalance!).twice.and_call_original
-      new_group.should_receive(:rebalance!).once.and_call_original
-      new_group
+      described_class.any_instance.should_receive(:rebalance!)
+      subject
     end
 
     it "should distribute available partitions between consumers" do
       subject.claimed.should == [0, 1]
-
-      b = new_group
-      wait_for { subject.claimed.size > 0 }
-      wait_for { b.claimed.size > 0 }
-      subject.claimed.should == [1]
-      b.claimed.should == [0]
-
-      c = new_group
-      b.close
-      wait_for { b.claimed.size < 0 }
-      wait_for { c.claimed.size > 0 }
-
-      subject.claimed.should == [1]
-      b.claimed.should == []
-      c.claimed.should == [0]
+      zk_client.stub children: ["my-group-UNIQUEID", "my-group-OTHERID"]
+      -> { subject.send :rebalance! }.should change { subject.claimed }.to([0])
+      zk_client.stub children: ["my-group-UNIQUEID", "my-group-OTHERID", "my-group-THIRDID"]
+      -> { subject.send :rebalance! }.should change { subject.claimed }.to([])
     end
 
     it "should allocate partitions correctly" do
       subject.claimed.should == [0, 1]
 
-      b = new_group
-      wait_for { subject.claimed.size > 0 }
-      wait_for { b.claimed.size > 0 }
-      subject.claimed.should == [1]
-      b.claimed.should == [0]
+      zk_client.stub children: ["my-group-UNIQUEID", "my-group-ZID"]
+      zk_client.should_receive(:delete).with("/consumers/my-group/owners/mytopic/1", ignore: :no_node)
+      -> { subject.send :rebalance! }.should change { subject.claimed }.to([1])
 
-      c = new_group
-      b.close
-      wait_for { b.claimed.size < 0 }
-      wait_for { c.claimed.size > 0 }
-
-      subject.claimed.should == [1]
-      b.claimed.should == []
-      c.claimed.should == [0]
+      zk_client.stub children: ["my-group-UNIQUEID", "my-group-ZID", "my-group-AID"]
+      -> { subject.send :rebalance! }.should change { subject.claimed }.to([0])
     end
 
   end
 
   describe "fetch" do
 
-    it "should return messages from owned partitions" do
+    it "should return messages from claimed partitions" do
       subject.fetch do |n, msg|
         n.should == 1
         msg.size.should == 5
@@ -195,21 +172,18 @@ describe Poseidon::ConsumerGroup do
     end
 
     it "should auto-commit fetched offset" do
-      -> {
-        subject.fetch {|n, _| n.should == 1 }
-      }.should change { subject.offset(1) }.from(0).to(5)
+      zk_client.should_receive(:set).with("/consumers/my-group/offsets/mytopic/1", "5")
+      subject.fetch {|n, _| n.should == 1 }
     end
 
     it "should skip auto-commits if requested" do
-      -> {
-        subject.fetch(commit: false) {|n, _| n.should == 1 }
-      }.should_not change { subject.offset(1) }
+      zk_client.should_not_receive(:set)
+      subject.fetch(commit: false) {|n, _| n.should == 1 }
     end
 
     it "should skip auto-commits if block results in false" do
-      -> {
-        subject.fetch {|n, _| n.should == 1; false }
-      }.should_not change { subject.offset(1) }
+      zk_client.should_not_receive(:set)
+      subject.fetch {|n, _| n.should == 1; false }
     end
 
     it "should return false when trying to fetch messages without a claim" do

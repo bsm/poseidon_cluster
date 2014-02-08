@@ -37,6 +37,7 @@ class Poseidon::ConsumerGroup
     def initialize(group, partition, options = {})
       broker = group.leader(partition)
       offset = group.offset(partition)
+      offset = :earliest_offset if offset == 0
       super group.id, broker.host, broker.port, group.topic, partition, offset, options
     end
 
@@ -105,7 +106,7 @@ class Poseidon::ConsumerGroup
 
   # @return [String] a globally unique identifier
   def id
-    @id ||= [name, ::Socket.gethostname, ::Process.pid, ::Time.now.to_i, ::Poseidon::Cluster.inc!].join("-")
+    @id ||= [name, Poseidon::Cluster.guid].join("-")
   end
 
   # @return [Hash<Symbol,String>] registry paths
@@ -359,7 +360,29 @@ class Poseidon::ConsumerGroup
     # * let POS be our index position in CG and let N = size(PT)/size(CG)
     # * assign partitions from POS*N to (POS+1)*N-1
     def rebalance!
-      @mutex.synchronize { perform_rebalance! }
+      return if @pending
+
+      @pending = true
+      @mutex.synchronize do
+        @pending = nil
+
+        release_all!
+        reload
+
+        ids = zk.children(registries[:consumer], watch: true)
+        pms = partitions
+        rng = self.class.pick(pms.size, ids, id)
+
+        pms[rng].each do |pm|
+          if @pending
+            release_all!
+            break
+          end
+
+          consumer = claim!(pm.id)
+          @consumers.push(consumer) if consumer
+        end if rng
+      end
     end
 
     # Release all consumer claims
@@ -368,12 +391,17 @@ class Poseidon::ConsumerGroup
       @consumers.clear
     end
 
+  private
+
     # Claim the ownership of the partition for this consumer
     # @raise [Timeout::Error]
     def claim!(partition)
       path = claim_path(partition)
       Timeout.timeout options[:claim_timout] || DEFAULT_CLAIM_TIMEOUT do
-        sleep(0.1) while zk.create(path, id, ephemeral: true, ignore: :node_exists).nil?
+        while zk.create(path, id, ephemeral: true, ignore: :node_exists).nil?
+          return if @pending
+          sleep(0.1)
+        end
       end
       Consumer.new self, partition, options.dup
     end
@@ -382,8 +410,6 @@ class Poseidon::ConsumerGroup
     def release!(partition)
       zk.delete claim_path(partition), ignore: :no_node
     end
-
-  private
 
     # @return [String] zookeeper ownership claim path
     def claim_path(partition)
@@ -398,20 +424,6 @@ class Poseidon::ConsumerGroup
     # @return [String] zookeeper consumer registration path
     def consumer_path
       "#{registries[:consumer]}/#{id}"
-    end
-
-    def perform_rebalance!
-      reload
-      release_all!
-
-      ids = zk.children(registries[:consumer], watch: true)
-      pms = partitions
-      rng = self.class.pick(pms.size, ids, id)
-
-      pms[rng].each do |pm|
-        consumer = claim!(pm.id)
-        @consumers.push(consumer)
-      end if rng
     end
 
 end
