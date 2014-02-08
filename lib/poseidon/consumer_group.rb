@@ -158,7 +158,7 @@ class Poseidon::ConsumerGroup
   # Closes the consumer group gracefully, only really useful in tests
   # @api private
   def close
-    release_all!
+    @mutex.synchronize { release_all! }
     zk.close
   end
 
@@ -220,15 +220,16 @@ class Poseidon::ConsumerGroup
   #
   # @api public
   def checkout(opts = {})
-    return false if @rebalancing
+    consumer = nil
+    commit   = @mutex.synchronize do
+      consumer = @consumers.shift
+      return false unless consumer
 
-    consumer = @consumers.shift
-    return false unless consumer
+      @consumers.push consumer
+      yield consumer
+    end
 
-    @consumers.push(consumer)
-    result = yield(consumer)
-
-    unless opts[:commit] == false || result == false
+    unless opts[:commit] == false || commit == false
       commit consumer.partition, consumer.offset
     end
     true
@@ -400,7 +401,6 @@ class Poseidon::ConsumerGroup
     end
 
     def perform_rebalance!
-      @rebalancing = true
       reload
       release_all!
 
@@ -412,8 +412,6 @@ class Poseidon::ConsumerGroup
         consumer = claim!(pm.id)
         @consumers.push(consumer)
       end if rng
-    ensure
-      @rebalancing = nil
     end
 
 end
