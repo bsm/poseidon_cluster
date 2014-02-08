@@ -7,7 +7,7 @@ GIT
 PATH
   remote: .
   specs:
-    poseidon_cluster (0.1.1)
+    poseidon_cluster (0.2.0)
       poseidon
       zk
 
