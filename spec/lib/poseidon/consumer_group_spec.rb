@@ -32,9 +32,8 @@ describe Poseidon::ConsumerGroup do
     double "ZK", mkdir_p: nil, get: nil, set: nil, delete: nil, create: "/path", register: nil, children: ["my-group-UNIQUEID"], close: nil
   end
 
-  subject do
-    described_class.new "my-group", ["localhost:29092", "localhost:29091"], ["localhost:22181"], "mytopic"
-  end
+  let(:group) { described_class.new "my-group", ["localhost:29092", "localhost:29091"], ["localhost:22181"], "mytopic" }
+  subject     { group }
 
   before do
     ZK.stub new: zk_client
@@ -122,6 +121,20 @@ describe Poseidon::ConsumerGroup do
     end
     [a, b].each &:join
     n.should == 400
+  end
+
+  describe "consumer" do
+    subject { described_class::Consumer.new group, 1 }
+    before  { group.stub(:offset).with(1).and_return(432) }
+
+    it { should be_a(Poseidon::PartitionConsumer) }
+    its(:offset) { should == 432 }
+
+    it 'should start with the earliest offset if none stored' do
+      group.unstub(:offset)
+      subject.offset.should == :earliest_offset
+    end
+
   end
 
   describe "rebalance" do
