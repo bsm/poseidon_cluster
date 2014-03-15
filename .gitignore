@@ -5,3 +5,4 @@ doc/
 .bundle/
 pkg/
 coverage/
+*.log
