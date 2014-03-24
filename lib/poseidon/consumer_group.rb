@@ -37,7 +37,8 @@ class Poseidon::ConsumerGroup
     def initialize(group, partition, options = {})
       broker = group.leader(partition)
       offset = group.offset(partition)
-      offset = :earliest_offset if offset == 0
+      offset = (options[:trail] ? :latest_offset : :earliest_offset) if offset == 0
+      options.delete(:trail)
       super group.id, broker.host, broker.port, group.topic, partition, offset, options
     end
 
@@ -89,6 +90,7 @@ class Poseidon::ConsumerGroup
   # @option options [Integer] :claim_timeout Maximum number of seconds to wait for a partition claim. Default: 10
   # @option options [Integer] :loop_delay Number of seconds to delay the next fetch (in #fetch_loop) if nothing was returned. Default: 1
   # @option options [Boolean] :register Automatically register instance and start consuming. Default: true
+  # @option options [Boolean] :trail Starts reading messages from the latest partitions offsets and skips 'old' messages . Default: false
   #
   # @api public
   def initialize(name, brokers, zookeepers, topic, options = {})
