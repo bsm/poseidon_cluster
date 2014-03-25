@@ -29,7 +29,7 @@ describe Poseidon::ConsumerGroup do
   end
 
   let :zk_client do
-    double "ZK", mkdir_p: nil, get: nil, set: nil, delete: nil, create: "/path", register: nil, children: ["my-group-UNIQUEID"], close: nil
+    double "ZK", mkdir_p: nil, rm_rf: nil, get: nil, set: nil, delete: nil, create: "/path", register: nil, children: ["my-group-UNIQUEID"], close: nil
   end
 
   let(:group) { described_class.new "my-group", ["localhost:29092", "localhost:29091"], ["localhost:22181"], "mytopic" }
@@ -135,6 +135,18 @@ describe Poseidon::ConsumerGroup do
       subject.offset.should == :earliest_offset
     end
 
+  end
+
+  describe 'purge!' do
+    it 'delete zookeeper maintained state data for a whole group' do
+      zk_client.should_receive(:rm_rf).with('/consumers/purgee')
+      described_class.purge!(['localhost:29092', 'localhost:29091'], 'purgee')
+    end
+
+    it 'delete zookeeper maintained state data for a particular topic' do
+      zk_client.should_receive(:rm_rf).with('/consumers/purgee/offsets/some_topic')
+      described_class.purge!(['localhost:29092', 'localhost:29091'], 'purgee', 'some_topic')
+    end
   end
 
   describe "rebalance" do
