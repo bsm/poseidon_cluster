@@ -36,13 +36,13 @@ describe Poseidon::ConsumerGroup do
   subject     { group }
 
   before do
-    ZK.stub new: zk_client
-    Poseidon::Cluster.stub guid: "UNIQUEID"
-    Poseidon::ConsumerGroup.any_instance.stub(:sleep)
-    Poseidon::PartitionConsumer.any_instance.stub resolve_offset_if_necessary: 0
-    Poseidon::BrokerPool.any_instance.stub fetch_metadata_from_broker: metadata
-    Poseidon::Connection.any_instance.stub(:fetch).with{|_, _, req| req[0].partition_fetches[0].partition == 0 }.and_return(fetch_response(10))
-    Poseidon::Connection.any_instance.stub(:fetch).with{|_, _, req| req[0].partition_fetches[0].partition == 1 }.and_return(fetch_response(5))
+    allow(ZK).to receive_messages(new: zk_client)
+    allow(Poseidon::Cluster).to receive_messages(guid: "UNIQUEID")
+    allow_any_instance_of(Poseidon::ConsumerGroup).to receive(:sleep)
+    allow_any_instance_of(Poseidon::PartitionConsumer).to receive_messages(resolve_offset_if_necessary: 0)
+    allow_any_instance_of(Poseidon::BrokerPool).to receive_messages(fetch_metadata_from_broker: metadata)
+    allow_any_instance_of(Poseidon::Connection).to receive(:fetch).with(10000, 0, ->req { req[0].partition_fetches[0].partition == 0 }).and_return(fetch_response(10))
+    allow_any_instance_of(Poseidon::Connection).to receive(:fetch).with(10000, 0, ->req { req[0].partition_fetches[0].partition == 1 }).and_return(fetch_response(5))
   end
 
   it               { should be_registered }
@@ -105,8 +105,8 @@ describe Poseidon::ConsumerGroup do
   end
 
   it "should checkout individual partition consumers (atomically)" do
-    subject.checkout {|c| c.partition.should == 1 }.should be_true
-    subject.checkout {|c| c.partition.should == 0 }.should be_true
+    subject.checkout {|c| c.partition.should == 1 }.should be_truthy
+    subject.checkout {|c| c.partition.should == 0 }.should be_truthy
 
     n = 0
     a = Thread.new do
@@ -171,17 +171,17 @@ describe Poseidon::ConsumerGroup do
       subject.fetch do |n, msg|
         n.should == 1
         msg.size.should == 5
-      end.should be_true
+      end.should be_truthy
 
       subject.fetch do |n, msg|
         n.should == 0
         msg.size.should == 10
-      end.should be_true
+      end.should be_truthy
 
       subject.fetch do |n, msg|
         n.should == 1
         msg.size.should == 5
-      end.should be_true
+      end.should be_truthy
     end
 
     it "should auto-commit fetched offset" do
@@ -204,12 +204,12 @@ describe Poseidon::ConsumerGroup do
       Poseidon::BrokerPool.any_instance.stub fetch_metadata_from_broker: no_topics
 
       subject.claimed.should == []
-      subject.fetch {|*|  }.should be_false
+      subject.fetch {|*|  }.should be_falsey
     end
 
     it "should return true even when no messages were fetched" do
       Poseidon::Connection.any_instance.stub fetch: fetch_response(0)
-      subject.fetch {|*|  }.should be_true
+      subject.fetch {|*|  }.should be_truthy
     end
 
   end
