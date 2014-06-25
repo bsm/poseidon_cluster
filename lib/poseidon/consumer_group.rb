@@ -61,6 +61,16 @@ class Poseidon::ConsumerGroup
     (frst..last)
   end
 
+  # Purge a consumer group and delete all related state data from zookeeper.
+  #
+  # @param [Array<String>] zookeepers A list of known zookeepers, e.g. ["localhost:2181"]
+  # @param [String] name Group name
+  # @param [String] topic specific topic tracking state to purge (instead of the whole group) -- optional
+  def self.purge!(zookeepers, name, topic = nil)
+    zk = ::ZK.new(zookeepers.join(","))
+    zk.rm_rf("/consumers/#{name}#{topic.nil? ? '' : "/offsets/#{topic}"}")
+  end
+
   # @attr_reader [String] name Group name
   attr_reader :name
 
@@ -89,6 +99,7 @@ class Poseidon::ConsumerGroup
   # @option options [Integer] :claim_timeout Maximum number of seconds to wait for a partition claim. Default: 10
   # @option options [Integer] :loop_delay Number of seconds to delay the next fetch (in #fetch_loop) if nothing was returned. Default: 1
   # @option options [Boolean] :register Automatically register instance and start consuming. Default: true
+  # @option options [Boolean] :ephemeral maintain the state of the cluster even after all nodes disconnect. Default: false
   #
   # @api public
   def initialize(name, brokers, zookeepers, topic, options = {})
@@ -100,6 +111,9 @@ class Poseidon::ConsumerGroup
     @pool       = ::Poseidon::BrokerPool.new(id, brokers)
     @mutex      = Mutex.new
     @registered = false
+    @ephemeral  = @options[:ephemeral] == true
+
+    @options.delete(:ephemeral)
 
     register! unless options[:register] == false
   end
@@ -112,10 +126,10 @@ class Poseidon::ConsumerGroup
   # @return [Hash<Symbol,String>] registry paths
   def registries
     @registries ||= {
-      consumer: "/consumers/#{name}/ids",
-      owner:    "/consumers/#{name}/owners/#{topic}",
-      offset:   "/consumers/#{name}/offsets/#{topic}",
-    }
+        consumer: "/consumers/#{name}/ids",
+        owner:    "/consumers/#{name}/owners/#{topic}",
+        offset:   "/consumers/#{name}/offsets/#{topic}"
+      }
   end
 
   # @return [Poseidon::ClusterMetadata] cluster metadata
@@ -182,7 +196,7 @@ class Poseidon::ConsumerGroup
   def commit(partition, offset)
     zk.set offset_path(partition), offset.to_s
   rescue ZK::Exceptions::NoNode
-    zk.create offset_path(partition), offset.to_s, ignore: :node_exists
+    zk.create(offset_path(partition), offset.to_s, ephemeral: @ephemeral, ignore: :node_exists)
   end
 
   # Sorted partitions by broker address (so partitions on the same broker are clustered together)
@@ -425,5 +439,4 @@ class Poseidon::ConsumerGroup
     def consumer_path
       "#{registries[:consumer]}/#{id}"
     end
-
 end
