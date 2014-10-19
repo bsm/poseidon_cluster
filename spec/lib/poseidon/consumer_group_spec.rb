@@ -135,6 +135,12 @@ describe Poseidon::ConsumerGroup do
       subject.offset.should == :earliest_offset
     end
 
+    it 'should start with the latest offset if none stored and in trailing mode' do
+      group.unstub(:offset)
+      trailing_consumer = described_class::Consumer.new group, 1, {trail: true}
+      trailing_consumer.offset.should == :latest_offset
+    end
+
   end
 
   describe "rebalance" do
