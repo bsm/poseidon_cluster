@@ -1,11 +1,11 @@
 Gem::Specification.new do |s|
-  s.required_ruby_version = '>= 1.9.1'
+  s.required_ruby_version = '>= 2.0.0'
   s.required_rubygems_version = ">= 1.8.0"
 
   s.name        = File.basename(__FILE__, '.gemspec')
   s.summary     = "Poseidon cluster extensions"
   s.description = "Cluster extensions for Poseidon, a producer and consumer implementation for Kafka >= 0.8"
-  s.version     = "0.2.0"
+  s.version     = "0.3.0"
 
   s.authors     = ["Black Square Media"]
   s.email       = "info@blacksquaremedia.com"
@@ -15,7 +15,7 @@ Gem::Specification.new do |s|
   s.files        = `git ls-files`.split("\n")
   s.test_files   = `git ls-files -- {test,spec,features,scenario}/*`.split("\n")
 
-  s.add_dependency "poseidon"
+  s.add_dependency "poseidon", ">= 0.0.5.pre1"
   s.add_dependency "zk"
 
   s.add_development_dependency "rake"

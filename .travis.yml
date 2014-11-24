@@ -1,11 +1,7 @@
 language: ruby
 rvm:
-  - 2.1.1
   - 2.0.0
-  - 1.9.3
-  - jruby-19mode
+  - 2.1.5
 script: bundle exec rake spec:coveralls scenario
 matrix:
   fast_finish: true
-  allow_failures:
-    - rvm: jruby-19mode
