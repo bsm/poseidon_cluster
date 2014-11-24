@@ -107,7 +107,7 @@ class Poseidon::ConsumerGroup
     @mutex      = Mutex.new
     @registered = false
 
-    register! unless options[:register] == false
+    register! unless options.delete(:register) == false
   end
 
   # @return [String] a globally unique identifier
