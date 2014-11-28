@@ -4,8 +4,9 @@ require 'pathname'
 module Scenario
   extend self
 
-  ROOT   = Pathname.new(File.expand_path("../", __FILE__))
-  SERVER = ROOT.join "kafka_2.10-0.8.1.1"
+  ROOT    = Pathname.new(File.expand_path("../", __FILE__))
+  VERSION = "0.8.1.1"
+  SERVER  = ROOT.join "kafka_2.10-#{VERSION}"
 
   TOPIC_NAME = "my-topic"
   KAFKA_BIN  = SERVER.join("bin", "kafka-server-start.sh")
@@ -80,7 +81,7 @@ module Scenario
 
   def download
     return if SERVER.directory?
-    sh "cd #{ROOT} && curl http://www.mirrorservice.org/sites/ftp.apache.org/kafka/0.8.1/kafka_2.10-0.8.1.1.tgz | tar xz"
+    sh "cd #{ROOT} && curl http://www.mirrorservice.org/sites/ftp.apache.org/kafka/#{VERSION}/kafka_2.10-#{VERSION}.tgz | tar xz"
   end
 
   def checkpoint!(timeout = 10)
