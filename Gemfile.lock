@@ -2,7 +2,7 @@ PATH
   remote: .
   specs:
     poseidon_cluster (0.3.0)
-      poseidon (>= 0.0.5.pre1)
+      poseidon (>= 0.0.5, < 0.1.0)
       zk
 
 GEM
@@ -71,9 +71,6 @@ GEM
       logging (~> 1.8.2)
       zookeeper (~> 1.4.0)
     zookeeper (1.4.10)
-    zookeeper (1.4.10-java)
-      slyphon-log4j (= 1.2.15)
-      slyphon-zookeeper_jar (= 3.3.5)
 
 PLATFORMS
   java

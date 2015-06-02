@@ -15,7 +15,7 @@ Gem::Specification.new do |s|
   s.files        = `git ls-files`.split("\n")
   s.test_files   = `git ls-files -- {test,spec,features,scenario}/*`.split("\n")
 
-  s.add_dependency "poseidon", ">= 0.0.5.pre1"
+  s.add_dependency "poseidon", ">= 0.0.5", "<0.1.0"
   s.add_dependency "zk"
 
   s.add_development_dependency "rake"
