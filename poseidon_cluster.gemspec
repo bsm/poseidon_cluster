@@ -1,5 +1,5 @@
 Gem::Specification.new do |s|
-  s.required_ruby_version = '>= 2.0.0'
+  s.required_ruby_version = '>= 1.9.1'
   s.required_rubygems_version = ">= 1.8.0"
 
   s.name        = File.basename(__FILE__, '.gemspec')
