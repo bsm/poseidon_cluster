@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    poseidon_cluster (0.3.0)
+    poseidon_cluster (0.3.1)
       poseidon (>= 0.0.5, < 0.1.0)
       zk
 
