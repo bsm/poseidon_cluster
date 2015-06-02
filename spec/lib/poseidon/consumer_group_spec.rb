@@ -76,6 +76,16 @@ describe Poseidon::ConsumerGroup do
     subject
   end
 
+  it "should defer registration when asked to" do
+    client = described_class.new "my-group", ["localhost:29092", "localhost:29091"], ["localhost:22181"], "mytopic", register: false
+
+    client.should_not be_registered
+    zk_client.should_not have_received(:register)
+
+    client.register!
+    client.should be_registered
+  end
+
   it "should sort partitions by leader address" do
     subject.partitions.map(&:id).should == [1, 0]
   end
