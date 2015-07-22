@@ -32,7 +32,7 @@ describe Poseidon::ConsumerGroup do
     double "ZK", mkdir_p: nil, get: nil, set: nil, delete: nil, create: "/path", register: nil, children: ["my-group-UNIQUEID"], close: nil
   end
 
-  let(:group) { described_class.new "my-group", ["localhost:29092", "localhost:29091"], ["localhost:22181"], "mytopic" }
+  let(:group) { described_class.new "my-group", ["localhost:29092", "localhost:29091"], "localhost:22181", "mytopic" }
   subject     { group }
 
   before do
@@ -77,7 +77,7 @@ describe Poseidon::ConsumerGroup do
   end
 
   it "should defer registration when asked to" do
-    client = described_class.new "my-group", ["localhost:29092", "localhost:29091"], ["localhost:22181"], "mytopic", register: false
+    client = described_class.new "my-group", ["localhost:29092", "localhost:29091"], "localhost:22181", "mytopic", register: false
 
     client.should_not be_registered
     zk_client.should_not have_received(:register)
