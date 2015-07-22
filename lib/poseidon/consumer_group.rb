@@ -81,7 +81,7 @@ class Poseidon::ConsumerGroup
   #
   # @param [String] name Group name
   # @param [Array<String>] brokers A list of known brokers, e.g. ["localhost:9092"]
-  # @param [Array<String>] zookeepers A list of known zookeepers, e.g. ["localhost:2181"]
+  # @param [String] zookeeper ensemble, e.g. ["zk1:2181,zk2:2181,zk1:2181/kafka"]
   # @param [String] topic Topic to operate on
   # @param [Hash] options Consumer options
   # @option options [Integer] :max_bytes Maximum number of bytes to fetch. Default: 1048576 (1MB)
@@ -94,10 +94,10 @@ class Poseidon::ConsumerGroup
   # @option options [Boolean] :trail Starts reading messages from the latest partitions offsets and skips 'old' messages . Default: false
   #
   # @api public
-  def initialize(name, brokers, zookeepers, topic, options = {})
+  def initialize(name, brokers, zk, topic, options = {})
     @name       = name
     @topic      = topic
-    @zk         = ::ZK.new(zookeepers.join(","))
+    @zk         = ::ZK.new(zk)
     # Poseidon::BrokerPool doesn't provide default value for this option
     # Configuring default value like this isn't beautiful, though.. by kssminus
     options[:socket_timeout_ms] ||= 10000
