@@ -94,7 +94,7 @@ class Poseidon::ConsumerGroup
   # @option options [Boolean] :trail Starts reading messages from the latest partitions offsets and skips 'old' messages . Default: false
   #
   # @api public
-  def initialize(name, brokers, zk, topic, options = {})
+  def initialize(name, brokers, zk, topic, options = {}, before_callback = nil, after_callback = nil)
     @name       = name
     @topic      = topic
     @zk         = ::ZK.new(zk)
@@ -107,7 +107,7 @@ class Poseidon::ConsumerGroup
     @mutex      = Mutex.new
     @registered = false
 
-    register! unless options.delete(:register) == false
+    register!(before_callback, after_callback) unless options.delete(:register) == false
   end
 
   # @return [String] a globally unique identifier
@@ -140,7 +140,7 @@ class Poseidon::ConsumerGroup
   end
 
   # @return [Boolean] true if registration was successful, false if already registered
-  def register!
+  def register!(before_callback = nil, after_callback = nil)
     return false if registered?
 
     # Register instance
@@ -148,7 +148,7 @@ class Poseidon::ConsumerGroup
       zk.mkdir_p(path)
     end
     zk.create(consumer_path, "{}", ephemeral: true)
-    zk.register(registries[:consumer]) {|_| rebalance! }
+    zk.register(registries[:consumer]) {|_| rebalance!(before_callback, after_callback) }
 
     # Rebalance
     rebalance!
@@ -365,8 +365,10 @@ class Poseidon::ConsumerGroup
     # * sort PT (so partitions on the same broker are clustered together)
     # * let POS be our index position in CG and let N = size(PT)/size(CG)
     # * assign partitions from POS*N to (POS+1)*N-1
-    def rebalance!
+    def rebalance!(before_callback = nil, after_callback = nil)
       return if @pending
+
+      before_callback.call if before_callback
 
       @pending = true
       @mutex.synchronize do
@@ -389,6 +391,8 @@ class Poseidon::ConsumerGroup
           @consumers.push(consumer) if consumer
         end if rng
       end
+
+      after_callback.call if after_callback
     end
 
     # Release all consumer claims
