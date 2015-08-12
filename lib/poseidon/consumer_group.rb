@@ -151,7 +151,7 @@ class Poseidon::ConsumerGroup
     zk.register(registries[:consumer]) {|_| rebalance!(before_callback, after_callback) }
 
     # Rebalance
-    rebalance!
+    rebalance!(before_callback, after_callback)
     @registered = true
   end
 
