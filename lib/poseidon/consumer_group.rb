@@ -403,7 +403,7 @@ class Poseidon::ConsumerGroup
     # @raise [Timeout::Error]
     def claim!(partition)
       path = claim_path(partition)
-      Timeout.timeout options[:claim_timeout] || DEFAULT_CLAIM_TIMEOUT do
+      Timeout.timeout options[:claim_timeout] || options[:claim_timout] || DEFAULT_CLAIM_TIMEOUT do
         while zk.create(path, id, ephemeral: true, ignore: :node_exists).nil?
           return if @pending
           sleep(0.1)
