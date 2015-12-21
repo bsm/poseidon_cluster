@@ -107,6 +107,11 @@ class Poseidon::ConsumerGroup
     @mutex      = Mutex.new
     @registered = false
 
+    # Delete the option ":claim_timeout" here, because ::Poseidon::PartitionConsumer#initialize
+    # doesn't accept the option ":claim_timeout".
+    @claim_timeout = options.delete(:claim_timeout) || options.delete(:claim_timout) ||
+      DEFAULT_CLAIM_TIMEOUT
+
     register! unless options.delete(:register) == false
   end
 
@@ -401,12 +406,9 @@ class Poseidon::ConsumerGroup
 
     # Claim the ownership of the partition for this consumer
     # @raise [Timeout::Error]
-    #
-    # Delete the option "claim_timeout" here, because ::Poseidon::PartitionConsumer#initialize
-    # doesn't accept the option "claim_timeout".
     def claim!(partition)
       path = claim_path(partition)
-      Timeout.timeout options.delete(:claim_timeout) || DEFAULT_CLAIM_TIMEOUT do
+      Timeout.timeout @claim_timeout do
         while zk.create(path, id, ephemeral: true, ignore: :node_exists).nil?
           return if @pending
           sleep(0.1)
