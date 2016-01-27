@@ -106,6 +106,8 @@ class Poseidon::ConsumerGroup
     @pool       = ::Poseidon::BrokerPool.new(id, brokers, options[:socket_timeout_ms])
     @mutex      = Mutex.new
     @registered = false
+    @logger = @options.delete(:logger) || Logger.new(STDOUT)
+    @log_level = @options.delete(:log_level) || :debug
 
     register! unless options.delete(:register) == false
   end
@@ -197,8 +199,7 @@ class Poseidon::ConsumerGroup
     return [] unless topic_metadata
 
     topic_metadata.available_partitions.sort_by do |part|
-      broker = metadata.brokers[part.leader]
-      [broker.host, broker.port].join(":")
+      part.id
     end
   end
 
@@ -229,16 +230,16 @@ class Poseidon::ConsumerGroup
   def checkout(opts = {})
     consumer = nil
     commit   = @mutex.synchronize do
-      consumer = @consumers.shift
-      return false unless consumer
+      @consumers.rotate!
+      return false unless (consumer = @consumers.first)
 
-      @consumers.push consumer
       yield consumer
     end
 
     unless opts[:commit] == false || commit == false
       commit consumer.partition, consumer.offset
     end
+
     true
   end
 
@@ -372,22 +373,41 @@ class Poseidon::ConsumerGroup
       @mutex.synchronize do
         @pending = nil
 
-        release_all!
         reload
 
         ids = zk.children(registries[:consumer], watch: true)
         pms = partitions
-        rng = self.class.pick(pms.size, ids, id)
+        owned_range = self.class.pick(pms.size, ids, id)
 
-        pms[rng].each do |pm|
-          if @pending
-            release_all!
-            break
+        if owned_range
+          owned_partitions = pms[owned_range].map(&:id)
+          already_claimed_partitions, unclaimed_partitions = owned_partitions.partition { |p| claimed.include?(p) }
+
+          partitions_to_release = claimed - already_claimed_partitions - unclaimed_partitions
+
+          @logger.send(@log_level, "[Kafka::Consumer] keeping partitions - #{name} already_claimed_partitions: #{already_claimed_partitions}")
+          @logger.send(@log_level, "[Kafka::Consumer] releasing partitions - #{name} partitions_to_release: #{partitions_to_release}")
+
+          partitions_to_release.each do |c|
+            release!(c)
           end
 
-          consumer = claim!(pm.id)
-          @consumers.push(consumer) if consumer
-        end if rng
+          @consumers.reject! do |c|
+            if partitions_to_release.include?(c.partition)
+              c = nil
+              true
+            end
+          end
+
+          @logger.send(@log_level, "[Kafka::Consumer] claiming partitions - #{name} unclaimed_partitions: #{unclaimed_partitions}")
+
+          unclaimed_partitions.each { |p| claim!(p) }
+
+          @logger.send(@log_level, "[Kafka::Consumer] rebalanced! - #{name} claimed: #{claimed}")
+        else
+          @logger.send(@log_level, "[Kafka::Consumer] rebalanced! - #{name} releasing all consumers: #{claimed}")
+          release_all!
+        end
       end
     end
 
@@ -400,17 +420,32 @@ class Poseidon::ConsumerGroup
   private
 
     # Claim the ownership of the partition for this consumer
-    # @raise [Timeout::Error]
     def claim!(partition)
+      return if claimed.include?(partition)
+
       path = claim_path(partition)
-      Timeout.timeout options[:claim_timeout] || options[:claim_timout] || DEFAULT_CLAIM_TIMEOUT do
-        while zk.create(path, id, ephemeral: true, ignore: :node_exists).nil?
-          return if @pending
-          sleep(0.1)
+
+      begin
+        zk.create(path, id, ephemeral: true)
+        @consumers.push(Poseidon::ConsumerGroup::Consumer.new(self, partition, options.dup))
+      rescue ZK::Exceptions::NodeExists
+        node_subscription = zk.register(path) do |event|
+          if event.node_deleted?
+            if claim!(partition)
+              @logger.send(@log_level, "[Kafka::Consumer] watch trigger - #{name}, claimed partition: #{partition}, claimed: #{claimed}")
+            end
+          end
         end
+
+        unless zk.exists?(path, watch: true)
+          node_subscription.unsubscribe
+          claim!(partition)
+        end
+
+        nil
       end
-      Consumer.new self, partition, options.dup
     end
+
 
     # Release ownership of the partition
     def release!(partition)

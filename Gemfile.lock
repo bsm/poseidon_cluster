@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    poseidon_cluster (0.3.3)
+    poseidon_cluster (0.3.4.beta2)
       poseidon (>= 0.0.5, < 0.1.0)
       zk
 
@@ -88,4 +88,4 @@ DEPENDENCIES
   yard
 
 BUNDLED WITH
-   1.10.6
+   1.11.2

@@ -32,7 +32,9 @@ describe Poseidon::ConsumerGroup do
     double "ZK", mkdir_p: nil, get: nil, set: nil, delete: nil, create: "/path", register: nil, children: ["my-group-UNIQUEID"], close: nil
   end
 
-  let(:group) { described_class.new "my-group", ["localhost:29092", "localhost:29091"], ["localhost:22181"], "mytopic" }
+  let(:logger) { Logger.new(STDOUT) }
+
+  let(:group) { described_class.new "my-group", ["localhost:29092", "localhost:29091"], ["localhost:22181"], "mytopic", logger: logger }
   subject     { group }
 
   before do
@@ -77,7 +79,7 @@ describe Poseidon::ConsumerGroup do
   end
 
   it "should defer registration when asked to" do
-    client = described_class.new "my-group", ["localhost:29092", "localhost:29091"], ["localhost:22181"], "mytopic", register: false
+    client = described_class.new "my-group", ["localhost:29092", "localhost:29091"], ["localhost:22181"], "mytopic", register: false, logger: logger
 
     client.should_not be_registered
     zk_client.should_not have_received(:register)
@@ -87,7 +89,7 @@ describe Poseidon::ConsumerGroup do
   end
 
   it "should sort partitions by leader address" do
-    subject.partitions.map(&:id).should == [1, 0]
+    subject.partitions.map(&:id).should == [0, 1]
   end
 
   it "should not fail if topic doesn't exist" do
@@ -154,7 +156,7 @@ describe Poseidon::ConsumerGroup do
 
   end
 
-  describe "rebalance" do
+  describe "rebalance!" do
 
     it "should watch out for new consumers joining/leaving" do
       described_class.any_instance.should_receive(:rebalance!)
@@ -164,7 +166,7 @@ describe Poseidon::ConsumerGroup do
     it "should distribute available partitions between consumers" do
       subject.claimed.should == [0, 1]
       zk_client.stub children: ["my-group-UNIQUEID", "my-group-OTHERID"]
-      -> { subject.send :rebalance! }.should change { subject.claimed }.to([0])
+      -> { subject.send :rebalance! }.should change { subject.claimed }.to([1])
       zk_client.stub children: ["my-group-UNIQUEID", "my-group-OTHERID", "my-group-THIRDID"]
       -> { subject.send :rebalance! }.should change { subject.claimed }.to([])
     end
@@ -174,10 +176,10 @@ describe Poseidon::ConsumerGroup do
 
       zk_client.stub children: ["my-group-UNIQUEID", "my-group-ZID"]
       zk_client.should_receive(:delete).with("/consumers/my-group/owners/mytopic/1", ignore: :no_node)
-      -> { subject.send :rebalance! }.should change { subject.claimed }.to([1])
+      -> { subject.send :rebalance! }.should change { subject.claimed }.to([0])
 
       zk_client.stub children: ["my-group-UNIQUEID", "my-group-ZID", "my-group-AID"]
-      -> { subject.send :rebalance! }.should change { subject.claimed }.to([0])
+      -> { subject.send :rebalance! }.should change { subject.claimed }.to([1])
     end
 
   end
