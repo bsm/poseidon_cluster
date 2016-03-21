@@ -1,3 +1,7 @@
+# DEPRECATION NOTICE
+
+Due to a lack of resources, this project is unfortunately discontinued. If you require clustering functionality for your ruby consumers, please refer to: https://github.com/karafka/karafka
+
 # Poseidon Cluster [![Build Status](https://travis-ci.org/bsm/poseidon_cluster.png?branch=master)](https://travis-ci.org/bsm/poseidon_cluster) [![Coverage Status](https://coveralls.io/repos/bsm/poseidon_cluster/badge.png?branch=master)](https://coveralls.io/r/bsm/poseidon_cluster?branch=master)
 
 Poseidon Cluster is a cluster extension of the excellent [Poseidon](http://github.com/bpot/poseidon) Ruby client for Kafka 0.8+. It implements the distribution concept of self-rebalancing *Consumer Groups* and supports the consumption of a single topic from multiple instances.
