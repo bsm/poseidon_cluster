@@ -12,7 +12,7 @@ Scenario.run do
   consume "A"
   consume "B"
   consume "C"
-  checkpoint!
+  checkpoint!(30)
 
   15.times { produce 1000 }
   consume "D"
