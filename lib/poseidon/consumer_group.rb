@@ -37,7 +37,7 @@ class Poseidon::ConsumerGroup
     def initialize(group, partition, options = {})
       broker = group.leader(partition)
       offset = group.offset(partition)
-      offset = (options[:trail] ? :latest_offset : :earliest_offset) if offset == 0
+      offset = (options[:trail] ? :latest_offset : :earliest_offset)
       options.delete(:trail)
       super group.id, broker.host, broker.port, group.topic, partition, offset, options
     end
