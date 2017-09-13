@@ -52,13 +52,12 @@ class Poseidon::ConsumerGroup
     cids = cids.sort
     pos  = cids.index(id)
     return unless pos && pos < cids.size
-
-    step = pnum.fdiv(cids.size).ceil
-    frst = pos*step
-    last = (pos+1)*step-1
+    step = pnum / cids.size
+    remainder = pnum % cids.size
+    frst = pos * step + ([pos,remainder].min)
+    last = (pos + 1) * step + ([pos,remainder - 1].min)
     last = pnum-1 if last > pnum-1
     return if last < 0 || last < frst
-
     (frst..last)
   end
 
