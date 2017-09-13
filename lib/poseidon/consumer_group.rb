@@ -56,7 +56,7 @@ class Poseidon::ConsumerGroup
     remainder  = pnum % cid_cnt
     step = secondary_step = pnum / cid_cnt
     even_step_parts = pnum
-    until even_step_parts % cids.length == 0
+    until even_step_parts % cid_cnt == 0
       even_step_parts += 1
       step = even_step_parts / cid_cnt
       secondary_step = step - 1
