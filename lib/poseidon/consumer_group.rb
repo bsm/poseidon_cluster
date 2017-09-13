@@ -51,28 +51,13 @@ class Poseidon::ConsumerGroup
   def self.pick(pnum, cids, id)
     cids = cids.sort
     pos  = cids.index(id)
-    cid_cnt = cids.length
-    return unless pos && pos < cid_cnt
-    remainder  = pnum % cid_cnt
-    step = secondary_step = pnum / cid_cnt
-    even_step_parts = pnum
-    until even_step_parts % cid_cnt == 0
-      even_step_parts += 1
-      step = even_step_parts / cid_cnt
-      secondary_step = step - 1
-    end
-    secondary_step_start = remainder*step
-    if pos < remainder
-      frst = pos*step
-      last = (pos+1)*step-1
-    else
-      new_pos = pos-remainder
-      frst = secondary_step_start + new_pos*secondary_step
-      last = secondary_step_start + (new_pos+1)*secondary_step-1
-    end
+    return unless pos && pos < cids.size
+    step = pnum / cids.size
+    remainder = pnum % cids.size
+    frst = pos * step + ([pos,remainder].min)
+    last = (pos + 1) * step + ([pos,remainder - 1].min)
     last = pnum-1 if last > pnum-1
     return if last < 0 || last < frst
-
     (frst..last)
   end
 
